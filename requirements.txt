@@ -1,0 +1,14 @@
+# 运行期依赖 —— 转录主流程需要的全部第三方库
+#
+# 安装（国内网络建议走镜像，pypi.org 经常超时）：
+#     pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+#
+# 注意：本文件声明的是**运行期**依赖，体积较大（ctranslate2 含预编译二进制）。
+# 跑测试**不需要**装这里的东西 —— 见 requirements-dev.txt。
+
+faster-whisper>=1.0
+ctranslate2>=4.0
+av>=11.0
+PyYAML>=6.0
+modelscope>=1.9
+huggingface_hub>=0.23

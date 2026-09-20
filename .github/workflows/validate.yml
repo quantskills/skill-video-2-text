@@ -1,0 +1,83 @@
+name: Validate Skill
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate qsh-form
+        run: node scripts/validate-qsh-form.mjs SKILL.md
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      # 刻意只装 pytest + PyYAML：tests/ 用桩件替代 faster-whisper，
+      # 单元契约测试不需要任何重依赖，CI 因此能在十几秒内跑完。
+      - name: Install test dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest tests/ -q
+
+      # 下面几步都是"故意失败"的契约验证。
+      # 注意：GitHub Actions 以 `bash -eo pipefail` 执行 run 块，
+      # 非零退出会直接中断步骤，所以必须用 `|| code=$?` 捕获退出码。
+
+      - name: CLI stdout must stay pure JSON
+        run: |
+          code=0
+          python scripts/transcribe.py > /tmp/out.json || code=$?
+          test "$code" = "2" || { echo "参数缺失应退出 2，实际 $code"; exit 1; }
+          python -c "import json; d=json.load(open('/tmp/out.json')); assert d['ok'] is False; assert d['error']['code']=='missing_argument'; print('OK: stdout 是纯 JSON')"
+
+      - name: Missing dependency must be reported as structured error
+        run: |
+          printf 'stub' > /tmp/sample.mp3
+          code=0
+          python scripts/transcribe.py /tmp/sample.mp3 > /tmp/out2.json || code=$?
+          test "$code" = "1" || { echo "缺依赖应退出 1，实际 $code"; exit 1; }
+          python -c "import json; d=json.load(open('/tmp/out2.json')); assert d['error']['code']=='dependency_missing', d; assert 'requirements.txt' in d['error']['hint']; print('OK: dependency_missing 结构化返回')"
+
+      - name: Unsupported format must be rejected
+        run: |
+          echo hello > /tmp/notes.txt
+          code=0
+          python scripts/transcribe.py /tmp/notes.txt > /tmp/out3.json || code=$?
+          test "$code" = "1" || { echo "应退出 1，实际 $code"; exit 1; }
+          python -c "import json; d=json.load(open('/tmp/out3.json')); assert d['error']['code']=='unsupported_format', d; print('OK: 格式校验生效')"
+
+      # 自检命令本身必须能跑通，并如实报告缺什么。
+      - name: env_check self-check must run and report honestly
+        run: |
+          code=0
+          python scripts/env_check.py --self-check --json > /tmp/env.json || code=$?
+          test "$code" = "1" || { echo "CI 未装 faster-whisper，自检应退出 1，实际 $code"; exit 1; }
+          python - <<'PY'
+          import json
+          report = json.load(open('/tmp/env.json'))
+          assert report['status'] == 'blocked', report['status']
+          assert report['ok'] is False
+          blockers = report['summary']['blockers']
+          assert 'faster_whisper' in blockers, f"自检必须报出缺失的硬依赖，实际: {blockers}"
+          groups = [g['group'] for g in report['checks']]
+          assert groups == ['runtime', 'dependencies', 'decoder', 'model', 'config'], groups
+          print('OK: env_check 如实报告阻塞项 ->', blockers)
+          PY
+
+      - name: Output validator must reject a malformed transcript
+        run: |
+          printf '{"ok": true, "segments": [{"start": 5, "end": 1, "text": "x"}], "duration": 9}' > /tmp/bad.json
+          code=0
+          python scripts/validate.py /tmp/bad.json > /tmp/bad_report.json || code=$?
+          test "$code" = "1" || { echo "畸形产物应判 FAIL 并退出 1，实际 $code"; exit 1; }
+          python -c "import json; r=json.load(open('/tmp/bad_report.json')); assert r['status']=='FAIL', r; print('OK: 输出契约校验生效 ->', r['errors'])"

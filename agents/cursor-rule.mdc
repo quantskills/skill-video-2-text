@@ -1,0 +1,143 @@
+---
+description: 音频/视频转文字 — 本地 faster-whisper 转录 + 大模型后处理（纠错/标点/分段/摘要），全程离线，无需账号
+globs: []
+alwaysApply: false
+---
+
+# skill-video-2-text
+
+把本地音视频文件转成可阅读、可检索、可引用的 Markdown 文字稿。本地 faster-whisper 出带时间戳的粗糙分段，再由你（大模型）做纠错、标点、分段和摘要。**全程离线，不调用云端语音识别 API，不需要任何账号或 API key。**
+
+## 何时使用
+
+用户提供了音频文件（`.mp3` `.wav` `.m4a` `.flac` `.ogg` `.aac` `.wma` `.opus`）或视频文件（`.mp4` `.mov` `.mkv` `.avi` `.webm` `.flv` `.wmv` `.m4v`），并且意图是把语音内容变成文字稿时 —— 包括转文字、转字幕、整理会议记录、提取访谈内容、生成课程笔记。
+
+**即使用户没有说"转录"或"whisper"，只要意图是语音变文字，就用这个 skill。**
+
+不适用：实时同传、说话人分离（区分谁在说）、音乐/歌唱转录。
+
+## 快速开始
+
+```bash
+# 1. 首次使用：装依赖（国内务必走镜像，pypi.org 直连经常超时）
+pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+
+# 2. 环境自检（退出 0=就绪 1=阻塞 2=仅告警仍可用）
+python3 scripts/env_check.py --self-check
+
+# 3. 转录
+python3 scripts/transcribe.py "<文件路径>" --language zh
+
+# 4. 校验产物契约（不要跳过）
+python3 scripts/validate.py output/<名>.transcript.json --strict
+
+# 5. 你做后处理，写出 <名>.transcript.md
+```
+
+跑单元测试不需要装 faster-whisper（354 个用例全部走桩件）：
+
+```bash
+pip install -r requirements-dev.txt -i https://mirrors.aliyun.com/pypi/simple/
+python3 -m pytest tests/ -q
+```
+
+## 关键约定（违反会导致难排查的问题）
+
+### stdout 只有一个 JSON 对象
+
+进度、模型下载日志、依赖告警**全部走 stderr**。可以放心 `json.loads(stdout)`。
+
+### 读 error.code，不要贴 traceback
+
+所有失败都返回 `{"ok": false, "error": {"code", "message", "hint"}}`。`hint` 里是给用户的具体修复命令，直接转述它。
+
+| code | 怎么办 |
+|---|---|
+| `unsupported_format` | `hint` 里有完整支持列表；建议用 ffmpeg 转码 |
+| `input_not_found` | 核对路径；含空格或中文的路径要加引号 |
+| `input_empty` | 0 字节，让用户重新导出 |
+| `dependency_missing` | `pip install -r requirements.txt` |
+| `model_load_failed` | 多为 `int8` 不受支持，把 config 里 `model.compute_type` 改 `float32` |
+| `decode_failed` | **这时才**提示装系统 ffmpeg |
+| `transcribe_failed` | 把完整 stderr 反馈给维护者 |
+
+### ffmpeg 缺失不是阻塞项
+
+PyAV 自带静态编译的 ffmpeg 解码库，多数情况够用。自检把缺 ffmpeg 判为**告警**（退出码 2）。看到 2 时告诉用户"未检测到 ffmpeg，我先尝试转录，失败会再提示安装"，然后**继续往下走**，不要拦停。只有真的返回 `decode_failed` 才回头给安装命令：
+
+- macOS `brew install ffmpeg` / Windows `winget install ffmpeg` / Debian·Ubuntu `sudo apt install ffmpeg`
+
+### 第 3 步的输出刻意保持原始态
+
+**不要**在转录阶段做清理。语气词、缺失的标点、按换气停顿切分的 segment 全部保留 —— 时间间隔是第 5 步判断句读的依据，删掉就没了。
+
+### 第 4 步不能跳过
+
+拿一份 `segments` 为空或时间戳错乱的 JSON 去做后处理，你会写出一份**格式完美、语气通顺、内容全是编的**文档。这比直接报错危险得多。`validate.py` FAIL 时必须停下来把 `errors` 告诉用户。
+
+## 你要做的后处理（第 5 步）
+
+这一步没有脚本，是给你的指令。拿到通过校验的 JSON 后，一次完成这四件事：
+
+1. **纠错** —— 修正明显的同音字/别字（"在"vs"再"、专有名词）。依据是上下文语义是否通顺；**拿不准就保留原样**，不要过度纠正成你猜测的意思。
+2. **补标点** —— 原始转录几乎没有标点。参考 segment 之间的时间间隔：停 1 秒以上多半是句号，停 0.1 秒多半是逗号。
+3. **分段** —— **不要按时间戳机械分段**，那是识别引擎的换气停顿，不是语义边界。按话题/语义的自然转折重新分段，一段对应一个相对完整的意思单元。
+4. **摘要** —— 全文之前用 3-5 句话概括说了什么、核心结论是什么。多个话题就分点概括。
+
+### 交付格式
+
+```markdown
+# <文件名或简要主题> 转录稿
+
+## 摘要
+（3-5 句话，或分点列出的话题概括）
+
+## 正文
+
+### [00:00] <语义小标题，可选>
+纠错、加好标点之后的正文内容……
+
+### [03:45] <下一段>
+……
+```
+
+- 时间戳用 `[mm:ss]`，取该语义段第一个原始 segment 的 `start`。脚本已生成 `*.timeline.txt`，可直接对照取用。
+- 语义小标题不是必需的；内容松散、没有明显话题转折时只留时间戳。
+- 写入 `<原文件名>.transcript.md`，告诉用户保存在哪里，**同时在对话里展示全文**，让用户不用打开文件也能看到。
+
+## 作为库调用
+
+```python
+import sys
+sys.path.insert(0, "/path/to/skill-video-2-text")
+from scripts.transcribe import run, validate_input, InputValidationError
+
+try:
+    info = validate_input("~/Downloads/会议.m4a")     # 便宜的预检
+    result = run(info["path"], language="zh", output_dir="./out")
+    for seg in result["segments"][:5]:
+        print(f'[{seg["start"]:.1f}-{seg["end"]:.1f}] {seg["text"]}')
+except InputValidationError as exc:
+    print(exc.code, exc.message, exc.hint, sep="\n")
+```
+
+## 参数
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `input` | 必填 | 音视频文件路径 |
+| `--language` | 自动检测 | `zh`/`en`/… 明确语种更快更准 |
+| `--model-size` | `base` | `tiny`/`base`/`small`/`medium`/`large-v3`（base 之外未端到端验证） |
+| `--model-path` | 自动查找/下载 | 显式指定本地模型目录 |
+| `--initial-prompt` | 无 | 领域提示词，显著改善专有名词识别 |
+| `--config` | `config/transcribe_config.yaml` | 配置文件路径 |
+| `--output-dir` | 配置里的 `output.dir` | 相对路径按**仓库根**解析 |
+| `--no-write` | 关 | 只打 JSON，不落盘 |
+
+## 隐私提醒
+
+音频不离开本机，但 `output/` 下的转录稿是**明文文本**，敏感度不低于原始录音。已 gitignore，不要提交、不要上传第三方服务（包括粘贴进在线 LLM —— 那等于放弃本地转录的全部隐私优势）。处理问诊、法律、财务、人事类录音时提醒用户注意合规与授权。
+
+## 依赖
+
+Python 3.10+、faster-whisper ≥ 1.0、ctranslate2 ≥ 4.0、av ≥ 11.0、PyYAML ≥ 6.0；下载模型另需 modelscope 或 huggingface_hub。**无需任何账号或 API key。** 详见 `SKILL.md` 与 `references/`。

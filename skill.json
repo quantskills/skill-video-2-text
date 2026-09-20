@@ -1,0 +1,34 @@
+{
+  "name": "skill-video-2-text",
+  "version": "0.1.1",
+  "description": "把本地音频/视频离线转写为带时间戳的原始语料。第 1 阶段脚本用 faster-whisper 出稿，第 2 阶段由调用方大模型加标点、分段、写摘要。零凭据、零云端 API。",
+  "form": "engineered",
+  "entrypoint": "SKILL.md",
+  "entry": "scripts/transcribe.py",
+  "runtime": "python>=3.10",
+  "license": "GPL-3.0",
+  "data_source": "none",
+  "input_source": "LocalFile",
+  "auth_required": false,
+  "offline": true,
+  "type": "utility",
+  "category": "speech-to-text",
+  "models": [
+    "faster-whisper-base"
+  ],
+  "tags": [
+    "audio",
+    "video",
+    "transcription",
+    "whisper",
+    "speech-to-text",
+    "offline",
+    "meeting-notes",
+    "subtitle"
+  ],
+  "capabilities": {
+    "self_check": "scripts/env_check.py",
+    "transcribe": "scripts/transcribe.py",
+    "validate": "scripts/validate.py"
+  }
+}

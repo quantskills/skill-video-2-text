@@ -1,0 +1,62 @@
+# video-to-text — 转录参数集中管理
+#
+# 所有可调参数集中在此，transcribe.py 通过 --config 或默认加载本文件。
+# 优先级：命令行参数 > 环境变量 > 本文件 > 代码内置默认值。
+# 本文件缺失或 pyyaml 未安装时，scripts/config.py 会自动降级到内置默认值，
+# 不会让整个 Skill 跑不起来。
+
+# ============================================================
+# 模型
+# ============================================================
+model:
+  size: "base"            # base(约145MB,已验证) | tiny | small | medium | large-v3(未验证)
+  device: "cpu"           # cpu | cuda | auto
+  compute_type: "int8"    # int8(CPU推荐) | int8_float16 | float16 | float32
+  # 显式指定本地模型目录；留空则按 本地缓存 -> ModelScope -> hf-mirror -> HF官方 自动定位/下载
+  path: null
+
+# ============================================================
+# 模型下载来源
+# ============================================================
+download:
+  # 顺序即优先级。国内网络保持默认即可，ModelScope 无需任何代理配置。
+  sources: ["modelscope", "hf_mirror", "hf_official"]
+  hf_mirror_endpoint: "https://hf-mirror.com"
+  hf_official_endpoint: "https://huggingface.co"
+  # 缓存根目录；留空则用 ~/.cache/faster-whisper-models
+  # 也可用环境变量 FASTER_WHISPER_CACHE_ROOT 覆盖
+  cache_root: null
+
+# ============================================================
+# 解码 / 转录
+# ============================================================
+transcribe:
+  beam_size: 5            # 束搜索宽度；调小可显著提速，代价是准确率略降
+  best_of: 5
+  vad_filter: true        # 语音活动检测，过滤静音与背景噪声段
+  vad_min_silence_ms: 2000
+  temperature: 0.0        # 0 = 贪心，转录任务不要采样
+  condition_on_previous_text: false   # 关闭可降低长音频的重复幻觉
+  # 语言代码 zh/en/...；留空则自动检测。明确知道语种时填上能提升准确率和速度。
+  language: null
+  initial_prompt: null    # 可选：领域提示词，能显著改善专有名词识别
+
+# ============================================================
+# 输入
+# ============================================================
+input:
+  audio_extensions: [".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".wma", ".opus"]
+  video_extensions: [".mp4", ".mov", ".mkv", ".avi", ".webm", ".flv", ".wmv", ".m4v"]
+  # 单文件体积上限（MB），超过则拒绝，避免误传整个磁盘镜像
+  max_size_mb: 4096
+
+# ============================================================
+# 输出
+# ============================================================
+output:
+  dir: "output"
+  # 是否同时落地原始 JSON（大模型后处理的输入）
+  write_json: true
+  # 是否落地纯文本拼接稿（不含时间戳，便于直接检索/引用）
+  write_plain_text: true
+  json_indent: 2

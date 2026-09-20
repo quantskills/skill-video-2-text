@@ -1,0 +1,28 @@
+# —— Python 运行期产物 ——
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# —— 系统与编辑器 ——
+.DS_Store
+.idea/
+.vscode/
+
+# —— 转录产物：含用户隐私，绝不入库 ——
+# 会议、访谈、问诊录音的转录稿是明文敏感数据。
+# 本 skill 的卖点是「音频不出本机」，把转录稿提交到远端等于把这个卖点作废。
+output/
+*.transcript.json
+*.transcript.txt
+*.timeline.txt
+*.transcript.md
+
+# —— 模型权重：体积大、可再生，不入库 ——
+# 首次运行会按 explicit_path → local_cache → modelscope → hf_mirror → hf_official 自动获取。
+models/
+*.bin
+*.pt
+*.onnx

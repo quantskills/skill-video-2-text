@@ -1,0 +1,159 @@
+openapi: 3.1.0
+info:
+  title: skill-video-2-text
+  description: Offline speech-to-text for local audio/video files using faster-whisper. Emits timestamped raw segments as a single JSON object on stdout (progress goes to stderr). Punctuation, paragraphing and summarization are deliberately left to the calling LLM.
+  version: 0.1.0
+
+x-skill-info:
+  name: skill-video-2-text
+  type: utility
+  category: speech-to-text
+  entry: scripts/transcribe.py
+  models: [faster-whisper-base]
+  offline: true
+  auth_required: false
+  tags: [audio, video, transcription, whisper, speech-to-text, offline, meeting-notes, subtitle]
+
+x-steps:
+  - id: self_check
+    script: scripts/env_check.py
+    description: Verify Python version, hard dependencies, ffmpeg, model cache and config source
+    args: "--self-check --json"
+    auth_required: false
+    exit_codes:
+      0: ready
+      1: blocked (fix before transcribing)
+      2: warnings only (still usable)
+
+  - id: transcribe
+    script: scripts/transcribe.py
+    description: Transcribe one audio/video file into timestamped raw segments
+    args:
+      input_path: "/abs/path/meeting.m4a"
+      language: "zh"
+      model_size: "base"
+      output_dir: "output"
+    auth_required: false
+    output: "output/{name}.transcript.json, output/{name}.transcript.txt, output/{name}.timeline.txt"
+
+  - id: validate
+    script: scripts/validate.py
+    description: Check the transcript against the output contract before LLM post-processing
+    args: "output/{name}.transcript.json --strict"
+    auth_required: false
+
+  - id: postprocess
+    script: null
+    description: >
+      NOT a script. Performed by the calling LLM: fix homophones, add punctuation,
+      re-paragraph by semantic topic (not by timestamp), and write a 3-5 sentence
+      summary. Deliver <name>.transcript.md. See SKILL.md step 5 for the full spec.
+    auth_required: false
+
+x-input-formats:
+  audio: [.mp3, .wav, .m4a, .flac, .ogg, .aac, .wma, .opus]
+  video: [.mp4, .mov, .mkv, .avi, .webm, .flv, .wmv, .m4v]
+  notes: >
+    Video audio tracks are extracted automatically via PyAV; no manual ffmpeg
+    conversion needed. Extensions are the first gate (validate_input); actual
+    decode capability is decided by PyAV/ffmpeg.
+
+x-data-sources:
+  - LocalFile          # caller-supplied audio/video; the ONLY input source
+  # Deliberately NOT using PandaData or any market/fundamental/news API.
+
+x-model-sources:
+  repository: Systran/faster-whisper-base
+  size_mb: 145
+  # Tried in this order; first hit wins. See references/source_boundary.md.
+  order:
+    - explicit_path      # --model-path or FASTER_WHISPER_MODEL_DIR (no download at all)
+    - local_cache        # <cache_root>/<size>/ and <cache_root>/_ms_cache/models/.../snapshots/...
+    - modelscope         # pengzhendong -> keepitsimple -> Systran
+    - hf_mirror          # https://hf-mirror.com
+    - hf_official        # https://huggingface.co
+
+x-outputs:
+  - format: json
+    path: output/{name}.transcript.json
+    description: Full result object; the single handoff artifact between stage 1 (script) and stage 2 (LLM)
+  - format: text
+    path: output/{name}.transcript.txt
+    description: Segments joined by newline, no timestamps; for search and quotation
+  - format: text
+    path: output/{name}.timeline.txt
+    description: 'Per line: "[mm:ss - mm:ss] text" — for audio cross-reference and subtitle drafts'
+  - format: stdout
+    path: "-"
+    description: Exactly ONE JSON object. Progress, download logs and warnings all go to stderr.
+
+x-output-contract:
+  success:
+    ok: true
+    source: {path: str, name: str, ext: str, kind: "audio|video", size_bytes: int}
+    model_size: str
+    language: str
+    language_probability: float
+    duration: float
+    segment_count: int
+    segments: [{start: float, end: float, text: str}]
+    outputs: {json: str, plain_text: str, timeline: str}
+  failure:
+    ok: false
+    error: {code: str, message: str, hint: str}
+
+x-error-codes:
+  - missing_argument       # exit 2
+  - input_not_found
+  - input_not_a_file
+  - unsupported_format
+  - input_unreadable
+  - input_empty
+  - input_too_large
+  - dependency_missing
+  - model_load_failed
+  - decode_failed          # install system ffmpeg
+  - transcribe_failed
+  - interrupted            # exit 130
+
+x-decode-rules:
+  beam_size: 5
+  best_of: 5
+  temperature: 0.0                    # greedy; transcription must be reproducible, not creative
+  condition_on_previous_text: false   # reduces repetition hallucination on long audio
+  vad_filter: true
+  vad_min_silence_ms: 2000
+  local_files_only: true              # never touch the network during transcription
+
+x-blocking-policy:
+  # The line between "must stop" and "just warn". Tests: tests/test_env_check.py
+  blockers: [python<3.10, missing faster_whisper, missing ctranslate2, model unavailable]
+  warnings: [missing ffmpeg, missing modelscope, missing huggingface_hub, missing PyYAML]
+  rationale: >
+    PyAV bundles statically-linked ffmpeg libraries, so a missing system ffmpeg
+    usually still decodes fine. Only escalate to a blocker when transcription
+    actually returns decode_failed.
+
+x-requirements:
+  runtime: python >= 3.10
+  packages:
+    - faster-whisper >= 1.0
+    - ctranslate2 >= 4.0
+    - av >= 11.0
+    - modelscope >= 1.9          # download channel only
+    - huggingface_hub >= 0.23    # download channel only
+    - PyYAML >= 6.0              # degrades to built-in defaults if absent
+  test_packages:
+    - pytest >= 7.0
+    - PyYAML >= 6.0              # tests stub out faster-whisper entirely
+  env: []                        # NO credentials of any kind
+  optional_system:
+    - ffmpeg                     # only if decode_failed occurs
+    - node                       # only to run validate-qsh-form.mjs
+
+x-safety:
+  - Audio never leaves the machine; no cloud speech API is called.
+  - Transcripts under output/ are plaintext and sensitive; they are gitignored.
+  - Transcription is imperfect; human review is mandatory before any formal use.
+  - Recording others' speech may be regulated; confirm lawful authority first.
+  - Research and educational use only. Not investment, legal, or medical advice.

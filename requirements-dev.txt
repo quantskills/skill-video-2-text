@@ -1,0 +1,15 @@
+# 测试依赖 —— 刻意**不**继承 requirements.txt
+#
+# 这里没有 `-r requirements.txt`，是设计而非疏漏：
+#
+#   1. tests/ 用桩件完整替代 faster-whisper / ctranslate2 / modelscope / huggingface_hub，
+#      契约测试根本不需要任何重依赖，装上只是白等编译和下载。
+#   2. CI 因此能在十几秒内跑完（354 例约 1s），而不是先花几分钟拉几百 MB 二进制。
+#   3. 更重要的是：只有在不装重依赖的环境里，「缺依赖必须报 dependency_missing」
+#      这条负路径才天然可测。装齐了反而无法验证降级行为。
+#
+# 想真正跑一次转录，再单独执行：
+#     pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+
+pytest>=8.0
+PyYAML>=6.0
