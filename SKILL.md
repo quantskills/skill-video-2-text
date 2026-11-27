@@ -2,6 +2,15 @@
 name: skill-video-2-text
 description: 当需要把本地音频或视频离线转写成文字时使用此 skill。基于 faster-whisper 在本机产出带时间戳的原始语料，标点、分段、摘要交给调用方大模型完成；零凭据、零云端 API，音频全程不离开本机。
 tags: [audio, video, transcription, whisper, speech-to-text, offline, meeting-notes, subtitle]
+license: GPL-3.0-only
+metadata:
+  license: GPL-3.0-only
+  organization: QuantSkills
+  organization_url: https://github.com/quantskills
+  repository: skill-video-2-text
+  repository_url: https://github.com/quantskills/skill-video-2-text
+  project_type: skill
+  collection: document-knowledge
 ---
 
 # 音视频转文字 · 本地离线转录（faster-whisper）

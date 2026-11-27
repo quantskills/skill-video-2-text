@@ -1,5 +1,7 @@
 # skill-video-2-text
 
+QuantSkills release maintainer: [abgyjaguo](https://github.com/abgyjaguo).
+
 Offline speech-to-text for local audio and video files. **Stage 1** is a script: faster-whisper turns sound into timestamped raw segments. **Stage 2** is the calling LLM: fix homophones, add punctuation, re-paragraph by semantic topic, write a summary.
 
 No credentials, no cloud speech API, audio never leaves the machine. Suited to meeting notes, interview transcripts, lecture notes and subtitle drafts — especially privacy-sensitive recordings (clinical consultations, legal, HR).

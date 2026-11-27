@@ -1,5 +1,7 @@
 # skill-video-2-text
 
+QuantSkills 社区发布维护者：[abgyjaguo](https://github.com/abgyjaguo)。
+
 把本地音频/视频离线转写为带时间戳的原始语料。**第 1 阶段**脚本用 faster-whisper 出稿，**第 2 阶段**由调用方大模型纠错、加标点、按语义分段、写摘要。
 
 零凭据、零云端 API、音频不离开本机。适合会议记录、访谈整理、课程笔记、字幕初稿，尤其是隐私敏感的录音（问诊、法律、人事）。
